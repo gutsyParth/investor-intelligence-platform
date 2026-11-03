@@ -1,8 +1,12 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="Investor Intelligence Platform", version="0.1.0")
+from routes import health
+
+app = FastAPI(
+    title="Investor Intelligence Platform",
+    description="AI-powered financial document intelligence using RAG",
+    version="0.1.0",
+)
 
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+app.include_router(health.router)
