@@ -1,6 +1,7 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pypdf.errors import PdfReadError
 
+from ingestion.chunker import chunk_document
 from ingestion.pdf_parser import extract_pdf_text
 
 router = APIRouter(
@@ -50,9 +51,13 @@ def extract_document(file: UploadFile = File(...)):
             detail="PDF contains no extractable text",
         )
 
+    chunks = chunk_document(extracted_text)
+
     return {
         "filename": filename,
         "page_count": page_count,
         "character_count": len(extracted_text),
         "preview": extracted_text[:1000],
+        "chunk_count": len(chunks),
+        "first_chunk_preview": chunks[0][:300] if chunks else "",
     }
