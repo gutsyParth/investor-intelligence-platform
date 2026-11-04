@@ -1,7 +1,7 @@
 from functools import lru_cache
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine, URL
+from sqlalchemy.engine import URL, Engine
 
 from config.settings import get_settings
 
@@ -24,5 +24,6 @@ def get_engine() -> Engine:
 
     return create_engine(
         database_url,
+        connect_args={"sslmode": "require"},
         pool_pre_ping=True,
     )

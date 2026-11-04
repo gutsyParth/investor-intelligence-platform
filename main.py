@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from config.settings import get_settings
-from routes import health
+from routes import documents, health
 
 settings = get_settings()
 
@@ -13,3 +13,4 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
+app.include_router(documents.router)
