@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     app_env: Literal["development", "testing", "production"] = "development"
     debug: bool = False
 
+    azure_openai_endpoint: str | None = None
+    azure_openai_api_key: SecretStr | None = None
+    azure_openai_embedding_deployment: str = "text-embedding-3-small"
+
     db_host: str = "127.0.0.1"
     db_port: int = 5432
     db_name: str = "investor_intelligence"
