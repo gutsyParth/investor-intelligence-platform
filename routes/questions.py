@@ -89,7 +89,7 @@ def get_question_answerer() -> Callable[..., dict[str, Any]]:
 
         def embed_query(text: str) -> list[float]:
             embeddings = generate_embeddings(
-                chunks=[text],
+                [text],
                 client=openai_client,
             )
 
@@ -122,9 +122,9 @@ def ask_question(
 
     try:
         return answerer(
-            question=request.question,
-            top_k=request.top_k,
-            hybrid=request.hybrid,
+            request.question,
+            request.top_k,
+            request.hybrid,
         )
 
     except (AzureError, OpenAIError, RuntimeError, ValueError):
