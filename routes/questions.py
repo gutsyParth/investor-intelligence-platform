@@ -1,13 +1,18 @@
+import logging
 from collections.abc import Callable
-from typing import Annotated
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from azure.core.exceptions import AzureError
+from fastapi import APIRouter, Depends, HTTPException
+from openai import OpenAIError
 from pydantic import BaseModel, Field, field_validator
 
 from config.settings import get_settings
 from llm.embeddings import generate_embeddings, get_embedding_client
 from rag.service import answer_question
 from search.client import get_search_client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/questions",
@@ -32,12 +37,12 @@ class AskQuestionRequest(BaseModel):
     @field_validator("question")
     @classmethod
     def validate_question(cls, value: str) -> str:
-        question = value.strip()
+        value = value.strip()
 
-        if not question:
+        if not value:
             raise ValueError("Question cannot be empty")
 
-        return question
+        return value
 
 
 class SourceReference(BaseModel):
@@ -54,10 +59,11 @@ class AskQuestionResponse(BaseModel):
     sources: list[SourceReference]
 
 
-QuestionAnswerer = Callable[[str, int, bool], dict]
+def get_question_answerer() -> Callable[..., dict[str, Any]]:
+    """
+    Build the RAG service using configured Azure clients.
+    """
 
-
-def get_question_answerer() -> QuestionAnswerer:
     settings = get_settings()
 
     try:
@@ -65,22 +71,33 @@ def get_question_answerer() -> QuestionAnswerer:
         search_client = get_search_client()
 
     except RuntimeError as exc:
+        logger.warning(
+            "RAG service configuration is incomplete: %s",
+            type(exc).__name__,
+        )
+
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Question-answering service is not configured",
+            status_code=503,
+            detail="AI services are not configured",
         ) from exc
 
-    def run_question_answering(
+    def question_answerer(
         question: str,
         top_k: int,
         hybrid: bool,
-    ) -> dict:
+    ) -> dict[str, Any]:
+
+        def embed_query(text: str) -> list[float]:
+            embeddings = generate_embeddings(
+                chunks=[text],
+                client=openai_client,
+            )
+
+            return embeddings[0]
+
         return answer_question(
             question=question,
-            embed_query=lambda text: generate_embeddings(
-                [text],
-                client=openai_client,
-            )[0],
+            embed_query=embed_query,
             search_client=search_client,
             llm_client=openai_client,
             chat_model=settings.azure_openai_chat_deployment,
@@ -88,7 +105,7 @@ def get_question_answerer() -> QuestionAnswerer:
             hybrid=hybrid,
         )
 
-    return run_question_answering
+    return question_answerer
 
 
 @router.post(
@@ -97,13 +114,23 @@ def get_question_answerer() -> QuestionAnswerer:
 )
 def ask_question(
     request: AskQuestionRequest,
-    answerer: Annotated[
-        QuestionAnswerer,
-        Depends(get_question_answerer),
-    ],
-):
-    return answerer(
-        request.question,
-        request.top_k,
-        request.hybrid,
-    )
+    answerer: Callable[..., dict[str, Any]] = Depends(get_question_answerer),
+) -> dict[str, Any]:
+    """
+    Answer a financial question using indexed documents.
+    """
+
+    try:
+        return answerer(
+            question=request.question,
+            top_k=request.top_k,
+            hybrid=request.hybrid,
+        )
+
+    except (AzureError, OpenAIError, RuntimeError, ValueError):
+        logger.exception("RAG question-answering failed")
+
+        raise HTTPException(
+            status_code=502,
+            detail=("The AI question-answering service is temporarily unavailable"),
+        ) from None

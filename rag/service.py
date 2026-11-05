@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable, Sequence
 
 from azure.search.documents import SearchClient
@@ -7,8 +8,8 @@ from llm.generation import generate_grounded_answer
 from search.retriever import retrieve_chunks
 
 NO_CONTEXT_MESSAGE = (
-    "I couldn't find relevant information in the "
-    "uploaded documents to answer this question."
+    "I couldn't find relevant information in the indexed documents "
+    "to answer this question."
 )
 
 
@@ -21,8 +22,14 @@ def answer_question(
     top_k: int = 5,
     hybrid: bool = True,
 ) -> dict:
-    # Step 1: Retrieve relevant document chunks
-    retrieved_chunks = retrieve_chunks(
+    """
+    Retrieve relevant document chunks and generate a grounded answer.
+
+    Every numbered citation in the answer must correspond to a
+    retrieved source.
+    """
+
+    chunks = retrieve_chunks(
         query=question,
         embed_query=embed_query,
         search_client=search_client,
@@ -30,40 +37,41 @@ def answer_question(
         hybrid=hybrid,
     )
 
-    # Step 2: Handle missing context
-    if not retrieved_chunks:
+    if not chunks:
         return {
             "question": question,
             "answer": NO_CONTEXT_MESSAGE,
             "sources": [],
         }
 
-    # Step 3: Generate an answer grounded in the retrieved chunks
     answer = generate_grounded_answer(
         question=question,
-        chunks=retrieved_chunks,
+        chunks=chunks,
         client=llm_client,
         model=chat_model,
     )
 
-    # Step 4: Build source references
-    sources = []
+    # Extract references such as [1], [2], etc.
+    citations = {int(value) for value in re.findall(r"\[(\d+)\]", answer)}
 
-    for index, chunk in enumerate(
-        retrieved_chunks,
-        start=1,
-    ):
-        sources.append(
-            {
-                "reference": f"[{index}]",
-                "document_id": chunk["document_id"],
-                "filename": chunk["filename"],
-                "chunk_index": chunk["chunk_index"],
-                "content": chunk["content"],
-            }
-        )
+    valid_citations = set(range(1, len(chunks) + 1))
 
-    # Step 5: Return answer with supporting material
+    invalid_citations = citations - valid_citations
+
+    if invalid_citations:
+        raise RuntimeError("Generated answer contains invalid source references")
+
+    sources = [
+        {
+            "reference": f"[{index}]",
+            "document_id": chunk["document_id"],
+            "filename": chunk["filename"],
+            "chunk_index": chunk["chunk_index"],
+            "content": chunk["content"],
+        }
+        for index, chunk in enumerate(chunks, start=1)
+    ]
+
     return {
         "question": question,
         "answer": answer,
