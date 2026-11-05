@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     azure_openai_endpoint: str | None = None
     azure_openai_api_key: SecretStr | None = None
     azure_openai_embedding_deployment: str = "text-embedding-3-small"
+    azure_openai_chat_deployment: str = "gpt-4.1-mini"
 
     # Azure AI Search
     azure_search_endpoint: str | None = None
