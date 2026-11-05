@@ -1,5 +1,5 @@
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 
 from azure.search.documents import SearchClient
 
@@ -14,7 +14,7 @@ from search.indexer import (
 def ingest_pdf(
     pdf_bytes: bytes,
     filename: str,
-    embed_text: Callable[[str], Sequence[float]],
+    embed_chunks: Callable[[list[str]], list[list[float]]],
     search_client: SearchClient,
 ) -> dict:
     if not pdf_bytes:
@@ -29,14 +29,14 @@ def ingest_pdf(
     if not extracted_text.strip():
         raise ValueError("PDF contains no extractable text")
 
-    # Step 2: Split text into chunks
+    # Step 2: Split extracted text into chunks
     chunks = chunk_document(extracted_text)
 
     if not chunks:
         raise ValueError("No text chunks generated")
 
-    # Step 3: Generate embeddings for each chunk
-    embeddings = [list(embed_text(chunk)) for chunk in chunks]
+    # Step 3: Generate embeddings in a batch
+    embeddings = embed_chunks(chunks)
 
     # Step 4: Generate deterministic document identifier
     document_id = hashlib.sha256(pdf_bytes).hexdigest()

@@ -28,7 +28,12 @@ def test_ingest_pdf_success(
 
     mock_upload.return_value = 2
 
-    mock_embed = Mock(return_value=[0.1] * EMBEDDING_DIMENSIONS)
+    mock_embed = Mock(
+        return_value=[
+            [0.1] * EMBEDDING_DIMENSIONS,
+            [0.2] * EMBEDDING_DIMENSIONS,
+        ]
+    )
 
     mock_search_client = Mock(spec=SearchClient)
 
@@ -36,7 +41,7 @@ def test_ingest_pdf_success(
     result = ingest_pdf(
         pdf_bytes=b"%PDF-test-data",
         filename="annual_report.pdf",
-        embed_text=mock_embed,
+        embed_chunks=mock_embed,
         search_client=mock_search_client,
     )
 
@@ -48,14 +53,24 @@ def test_ingest_pdf_success(
 
     assert len(result["document_id"]) == 64
 
-    assert mock_embed.call_count == 2
+    mock_embed.assert_called_once_with(
+        [
+            "Revenue increased.",
+            "Profit increased.",
+        ]
+    )
+
     mock_upload.assert_called_once()
 
     uploaded_documents = mock_upload.call_args.kwargs["documents"]
 
     assert len(uploaded_documents) == 2
+
     assert uploaded_documents[0]["content"] == "Revenue increased."
-    assert len(uploaded_documents[0]["content_vector"]) == 1536
+
+    assert len(uploaded_documents[0]["content_vector"]) == EMBEDDING_DIMENSIONS
+
+    assert uploaded_documents[1]["content_vector"] == [0.2] * EMBEDDING_DIMENSIONS
 
 
 @patch("ingestion.pipeline.extract_pdf_text")
@@ -69,7 +84,7 @@ def test_ingest_pdf_empty_text(mock_extract):
         ingest_pdf(
             pdf_bytes=b"%PDF-test-data",
             filename="empty.pdf",
-            embed_text=Mock(),
+            embed_chunks=Mock(),
             search_client=Mock(spec=SearchClient),
         )
 
@@ -82,7 +97,7 @@ def test_ingest_pdf_empty_file():
         ingest_pdf(
             pdf_bytes=b"",
             filename="empty.pdf",
-            embed_text=Mock(),
+            embed_chunks=Mock(),
             search_client=Mock(spec=SearchClient),
         )
 
@@ -107,6 +122,6 @@ def test_ingest_pdf_no_chunks(
         ingest_pdf(
             pdf_bytes=b"%PDF-test-data",
             filename="report.pdf",
-            embed_text=Mock(),
+            embed_chunks=Mock(),
             search_client=Mock(spec=SearchClient),
         )

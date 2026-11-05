@@ -6,10 +6,16 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
-    Request,
     UploadFile,
     status,
 )
+
+from ingestion.pipeline import ingest_pdf
+from llm.embeddings import (
+    generate_embeddings,
+    get_embedding_client,
+)
+from search.client import get_search_client
 
 router = APIRouter(
     prefix="/documents",
@@ -21,23 +27,38 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 DocumentIngestor = Callable[[bytes, str], dict]
 
 
-def get_document_ingestor(request: Request) -> DocumentIngestor:
-    ingestor = getattr(
-        request.app.state,
-        "document_ingestor",
-        None,
-    )
+def get_document_ingestor() -> DocumentIngestor:
+    try:
+        embedding_client = get_embedding_client()
+        search_client = get_search_client()
 
-    if ingestor is None:
+    except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Document ingestion service is not configured",
+        ) from exc
+
+    def run_ingestion(
+        pdf_bytes: bytes,
+        filename: str,
+    ) -> dict:
+        return ingest_pdf(
+            pdf_bytes=pdf_bytes,
+            filename=filename,
+            embed_chunks=lambda chunks: generate_embeddings(
+                chunks,
+                client=embedding_client,
+            ),
+            search_client=search_client,
         )
 
-    return ingestor
+    return run_ingestion
 
 
-@router.post("/ingest", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/ingest",
+    status_code=status.HTTP_201_CREATED,
+)
 def ingest_document(
     file: Annotated[UploadFile, File()],
     ingestor: Annotated[
